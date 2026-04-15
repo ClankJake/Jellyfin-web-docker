@@ -30,10 +30,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 
 # Script de arranque mágico:
-# 1. Injeta um script no HTML para obrigar o navegador a ligar-se à própria URL do site.
-# 2. Preenche o ficheiro Nginx com as portas e IP do backend.
+# Preenche o ficheiro Nginx com as portas e IP do backend.
 CMD ["sh", "-c", " \
-    INJECT=\"<script>if(!localStorage.getItem('jellyfin_credentials')){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:window.location.origin,Name:'Jellyfin',Id:'proxy-server'}]}));}</script>\"; \
-    sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
     envsubst '\\$PORT \\$JELLYFIN_SERVER' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf; \
     nginx -g 'daemon off;'"]
