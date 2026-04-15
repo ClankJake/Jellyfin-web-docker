@@ -1,5 +1,5 @@
 # Estágio 1: Build
-FROM --platform=$BUILDPLATFORM node:20-bookworm AS builder
+FROM --platform=$BUILDPLATFORM node:24-bookworm AS builder
 
 ARG JELLYFIN_WEB_VERSION=master
 WORKDIR /app
@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     make \
     g++ \
     && rm -rf /var/lib/apt/lists/*
+
+# Atualizar o npm para a versão exigida (>= 11.0.0)
+RUN npm install -g npm@latest
 
 # Clonar com profundidade 1 para ser mais rápido
 RUN git clone --depth 1 --branch ${JELLYFIN_WEB_VERSION} https://github.com/jellyfin/jellyfin-web.git .
