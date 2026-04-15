@@ -23,19 +23,21 @@ RUN npm run build:production
 # Estágio 2: Runner (Nginx)
 FROM nginx:alpine
 
-# JELLYFIN_SERVER deve ser passado no docker-compose
 ENV JELLYFIN_SERVER=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Script de inicialização para injetar o IP do backend no config.json do app
-# O Jellyfin Web lê o arquivo config.json para saber qual servidor padrão usar
+# Script de inicialização aprimorado
+# 1. Substitui a porta no Nginx
+# 2. Cria/Injeta o servidor padrão no config.json de forma robusta usando jq
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
         echo \"Configurando servidor padrão para: $JELLYFIN_SERVER\"; \
-        sed -i \"s|\\\"defaultServerAddress\\\": \\\"\\\"|\\\"defaultServerAddress\\\": \\\"$JELLYFIN_SERVER\\\"|g\" /usr/share/nginx/html/config.json; \
+        # Usa jq para garantir que a chave existe no JSON de forma válida \
+        jq \".defaultServerAddress = \\\"$JELLYFIN_SERVER\\\"\" /usr/share/nginx/html/config.json > /tmp/config.json && \
+        cp /tmp/config.json /usr/share/nginx/html/config.json; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
     nginx -g 'daemon off;'"]
