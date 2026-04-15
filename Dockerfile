@@ -19,24 +19,21 @@ RUN npm run build:production
 # Estágio 2: Runner (Nginx)
 FROM nginx:alpine
 
-# Instala o JQ no Alpine para manipular o JSON com segurança
-RUN apk add --no-cache jq
+# Instalar gettext para usar a ferramenta envsubst (manipulação de variáveis no Nginx)
+RUN apk add --no-cache gettext
 
 ENV JELLYFIN_SERVER=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copiamos o ficheiro como um template
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
 
-# Script de inicialização:
-# 1. Ajusta a porta do Nginx
-# 2. Injeta o servidor padrão e pré-configura a lista de servidores no config.json
+# Script de arranque mágico:
+# 1. Injeta um script no HTML para obrigar o navegador a ligar-se à própria URL do site.
+# 2. Preenche o ficheiro Nginx com as portas e IP do backend.
 CMD ["sh", "-c", " \
-    if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
-        echo \"Configurando backend automático para: $JELLYFIN_SERVER\"; \
-        # Injeta defaultServerAddress e popula a array servers para pular a tela de seleção \
-        jq \".defaultServerAddress = \\\"$JELLYFIN_SERVER\\\" | .servers = [{\\\"Name\\\": \\\"Servidor Remoto\\\", \\\"Id\\\": \\\"remote-server\\\", \\\"ManualAddress\\\": \\\"$JELLYFIN_SERVER\\\", \\\"manualAddressOnly\\\": true}]\" /usr/share/nginx/html/config.json > /tmp/config.json && \
-        cp /tmp/config.json /usr/share/nginx/html/config.json; \
-    fi; \
-    sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
+    INJECT=\"<script>if(!localStorage.getItem('jellyfin_credentials')){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:window.location.origin,Name:'Jellyfin',Id:'proxy-server'}]}));}</script>\"; \
+    sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
+    envsubst '\\$PORT \\$JELLYFIN_SERVER' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf; \
     nginx -g 'daemon off;'"]
