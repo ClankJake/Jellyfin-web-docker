@@ -27,15 +27,39 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Script de arranque:
-# Injeta um JavaScript inteligente no cabeçalho do index.html.
-# Este script:
-# 1. Guarda o IP do backend.
-# 2. NÃO define um ID (para não disparar o alarme de segurança).
-# 3. Limpa rastos de testes anteriores automaticamente.
+# Este script injeta um JS que força o servidor no localStorage.
+# Se você conseguir o ID em /System/Info/Public, substitua o 'manual-id' abaixo.
+# Caso contrário, deixamos o Id vazio para ele auto-detectar sem erro de conflito.
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
         echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
-        INJECT=\"<script>try{var t='$JELLYFIN_SERVER';if(t){var c=localStorage.getItem('jellyfin_credentials');var p=c?JSON.parse(c):{Servers:[]};var s=p.Servers[0];if(!s||s.ManualAddress!==t||s.Id==='auto-server'||s.Id==='proxy-server'){p.Servers=[{ManualAddress:t,Name:'Jellyfin',manualAddressOnly:true}];localStorage.setItem('jellyfin_credentials',JSON.stringify(p));}}}catch(e){}</script>\"; \
+        INJECT=\"<script>\
+        (function(){\
+            try {\
+                var url = '$JELLYFIN_SERVER';\
+                var config = {\
+                    Servers: [{\
+                        ManualAddress: url,\
+                        Name: 'Jellyfin',\
+                        manualAddressOnly: true\
+                    }]\
+                };\
+                var stored = localStorage.getItem('jellyfin_credentials');\
+                var needsUpdate = true;\
+                if (stored) {\
+                    var parsed = JSON.parse(stored);\
+                    if (parsed.Servers && parsed.Servers.length > 0 && parsed.Servers[0].ManualAddress === url) {\
+                        needsUpdate = false;\
+                    }\
+                }\
+                if (needsUpdate) {\
+                    localStorage.setItem('jellyfin_credentials', JSON.stringify(config));\
+                    localStorage.setItem('active_server_id', '');\
+                    console.log('Servidor configurado automaticamente');\
+                }\
+            } catch (e) { console.error(e); }\
+        })();\
+        </script>\";\
         sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
