@@ -27,12 +27,15 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Script de arranque:
-# Injeta um pequeno JavaScript no cabeçalho (head) do index.html.
-# Este script guarda o IP do seu backend no navegador do utilizador ANTES de o Jellyfin carregar.
+# Injeta um JavaScript inteligente no cabeçalho do index.html.
+# Este script:
+# 1. Guarda o IP do backend.
+# 2. NÃO define um ID (para não disparar o alarme de segurança).
+# 3. Limpa rastos de testes anteriores automaticamente.
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
         echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
-        INJECT=\"<script>if(!localStorage.getItem('jellyfin_credentials')){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:'$JELLYFIN_SERVER',Name:'Servidor',Id:'auto-server',manualAddressOnly:true}]}));}</script>\"; \
+        INJECT=\"<script>try{var t='$JELLYFIN_SERVER';if(t){var c=localStorage.getItem('jellyfin_credentials');var p=c?JSON.parse(c):{Servers:[]};var s=p.Servers[0];if(!s||s.ManualAddress!==t||s.Id==='auto-server'||s.Id==='proxy-server'){p.Servers=[{ManualAddress:t,Name:'Jellyfin',manualAddressOnly:true}];localStorage.setItem('jellyfin_credentials',JSON.stringify(p));}}}catch(e){}</script>\"; \
         sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
