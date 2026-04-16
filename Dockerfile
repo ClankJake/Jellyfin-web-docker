@@ -23,44 +23,16 @@ ENV JELLYFIN_SERVER=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-# Certifique-se de usar o nginx.conf (sem ser .template)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Script de arranque:
-# Este script injeta um JS que força o servidor no localStorage.
-# Se você conseguir o ID em /System/Info/Public, substitua o 'manual-id' abaixo.
-# Caso contrário, deixamos o Id vazio para ele auto-detectar sem erro de conflito.
+# Script de arranque corrigido:
+# 1. Usamos um delimitador diferente no sed (#) para evitar conflito com as barras da URL.
+# 2. O JS agora é injetado em uma única linha para evitar problemas de quebra de string no shell.
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
         echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
-        INJECT=\"<script>\
-        (function(){\
-            try {\
-                var url = '$JELLYFIN_SERVER';\
-                var config = {\
-                    Servers: [{\
-                        ManualAddress: url,\
-                        Name: 'Jellyfin',\
-                        manualAddressOnly: true\
-                    }]\
-                };\
-                var stored = localStorage.getItem('jellyfin_credentials');\
-                var needsUpdate = true;\
-                if (stored) {\
-                    var parsed = JSON.parse(stored);\
-                    if (parsed.Servers && parsed.Servers.length > 0 && parsed.Servers[0].ManualAddress === url) {\
-                        needsUpdate = false;\
-                    }\
-                }\
-                if (needsUpdate) {\
-                    localStorage.setItem('jellyfin_credentials', JSON.stringify(config));\
-                    localStorage.setItem('active_server_id', '');\
-                    console.log('Servidor configurado automaticamente');\
-                }\
-            } catch (e) { console.error(e); }\
-        })();\
-        </script>\";\
-        sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
+        JS_CODE=\"<script>(function(){try{var u='$JELLYFIN_SERVER';var s=localStorage.getItem('jellyfin_credentials');var n=true;if(s){var p=JSON.parse(s);if(p.Servers&&p.Servers[0]&&p.Servers[0].ManualAddress===u)n=false;}if(n){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:u,Name:'Jellyfin',manualAddressOnly:true}]}));localStorage.removeItem('active_server_id');location.reload();}}catch(e){}})();</script>\"; \
+        sed -i \"s#</head>#$JS_CODE</head>#i\" /usr/share/nginx/html/index.html; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
     nginx -g 'daemon off;'"]
