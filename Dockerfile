@@ -16,21 +16,24 @@ RUN npm config set fetch-retries 5 && \
 RUN npm ci --include=dev --prefer-offline || npm install --include=dev --no-audit
 RUN npm run build:production
 
-# Estágio 2: Runner (Nginx)
+# Estágio 2: Runner (Nginx estático)
 FROM nginx:alpine
-
-# Instalar gettext para usar a ferramenta envsubst (manipulação de variáveis no Nginx)
-RUN apk add --no-cache gettext
 
 ENV JELLYFIN_SERVER=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
-# Copiamos o ficheiro como um template
-COPY nginx.conf.template /etc/nginx/nginx.conf.template
+# Certifique-se de usar o nginx.conf (sem ser .template)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Script de arranque mágico:
-# Preenche o ficheiro Nginx com as portas e IP do backend.
+# Script de arranque:
+# Injeta um pequeno JavaScript no cabeçalho (head) do index.html.
+# Este script guarda o IP do seu backend no navegador do utilizador ANTES de o Jellyfin carregar.
 CMD ["sh", "-c", " \
-    envsubst '\\$PORT \\$JELLYFIN_SERVER' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf; \
+    if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
+        echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
+        INJECT=\"<script>if(!localStorage.getItem('jellyfin_credentials')){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:'$JELLYFIN_SERVER',Name:'Servidor',Id:'auto-server',manualAddressOnly:true}]}));}</script>\"; \
+        sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
+    fi; \
+    sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
     nginx -g 'daemon off;'"]
