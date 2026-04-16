@@ -25,14 +25,15 @@ ENV PORT=80
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Script de arranque corrigido:
-# 1. Usamos um delimitador diferente no sed (#) para evitar conflito com as barras da URL.
-# 2. O JS agora é injetado em uma única linha para evitar problemas de quebra de string no shell.
+# Script de arranque:
+# 1. Utilizamos printf para evitar problemas de escape de caracteres no shell.
+# 2. Injetamos o script diretamente antes da tag de fechamento do head.
+# 3. O código JS verifica se o servidor já está configurado para evitar loops de reload.
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
-        echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
-        JS_CODE=\"<script>(function(){try{var u='$JELLYFIN_SERVER';var s=localStorage.getItem('jellyfin_credentials');var n=true;if(s){var p=JSON.parse(s);if(p.Servers&&p.Servers[0]&&p.Servers[0].ManualAddress===u)n=false;}if(n){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:u,Name:'Jellyfin',manualAddressOnly:true}]}));localStorage.removeItem('active_server_id');location.reload();}}catch(e){}})();</script>\"; \
-        sed -i \"s#</head>#$JS_CODE</head>#i\" /usr/share/nginx/html/index.html; \
+        echo \"Configurando servidor: $JELLYFIN_SERVER\"; \
+        export JS_INJECT=\"<script>(function(){try{var u='$JELLYFIN_SERVER';var s=localStorage.getItem('jellyfin_credentials');var n=true;if(s){var p=JSON.parse(s);if(p.Servers&&p.Servers[0]&&p.Servers[0].ManualAddress===u)n=false;}if(n){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:u,Name:'Jellyfin',manualAddressOnly:true}]}));localStorage.removeItem('active_server_id');location.reload();}}catch(e){}})();</script>\"; \
+        sed -i \"s#</head>#$JS_INJECT</head>#\" /usr/share/nginx/html/index.html; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
     nginx -g 'daemon off;'"]
