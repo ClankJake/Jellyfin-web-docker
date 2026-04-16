@@ -19,23 +19,22 @@ RUN npm run build:production
 # Estágio 2: Runner (Nginx estático)
 FROM nginx:alpine
 
-# Variáveis de ambiente para o servidor e o ID opcional
 ENV JELLYFIN_SERVER=""
 ENV JELLYFIN_ID=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
+# Certifique-se de usar o nginx.conf (sem ser .template)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Script de arranque:
-# 1. Injeta o script JS que configura o localStorage.
-# 2. Se JELLYFIN_ID for fornecido, ele é incluído para evitar o erro de incompatibilidade.
-# 3. O script limpa o cache antigo caso os dados mudem.
+# Injeta um pequeno JavaScript no cabeçalho (head) do index.html.
+# Este script guarda o IP do seu backend no navegador do utilizador ANTES de o Jellyfin carregar.
 CMD ["sh", "-c", " \
     if [ ! -z \"$JELLYFIN_SERVER\" ]; then \
-        echo \"Configurando servidor: $JELLYFIN_SERVER (ID: ${JELLYFIN_ID:-auto})\"; \
-        export JS_INJECT=\"<script>(function(){try{var u='$JELLYFIN_SERVER',i='$JELLYFIN_ID';var s=localStorage.getItem('jellyfin_credentials');var n=true;if(s){var p=JSON.parse(s);if(p.Servers&&p.Servers[0]&&p.Servers[0].ManualAddress===u&&(i===''||p.Servers[0].Id===i))n=false;}if(n){var o={ManualAddress:u,Name:'Jellyfin',manualAddressOnly:true};if(i)o.Id=i;localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[o]}));localStorage.removeItem('active_server_id');location.reload();}}catch(e){}})();</script>\"; \
-        sed -i \"s#</head>#$JS_INJECT</head>#\" /usr/share/nginx/html/index.html; \
+        echo \"A configurar backend direto para: $JELLYFIN_SERVER\"; \
+        INJECT=\"<script>if(!localStorage.getItem('jellyfin_credentials')){localStorage.setItem('jellyfin_credentials',JSON.stringify({Servers:[{ManualAddress:'$JELLYFIN_SERVER',Name:'Servidor',Id:'$JELLYFIN_ID',manualAddressOnly:true}]}));}</script>\"; \
+        sed -i \"s|</head>|$INJECT</head>|i\" /usr/share/nginx/html/index.html; \
     fi; \
     sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && \
     nginx -g 'daemon off;'"]
