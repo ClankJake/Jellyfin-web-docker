@@ -15,7 +15,9 @@ ENV JELLYFIN_SERVER=""
 ENV PORT=80
 
 COPY --from=builder /app/dist /usr/share/nginx/html
+# Copiamos para a pasta de templates do nginx
 COPY nginx.conf /etc/nginx/nginx.conf.template
 
 # O script substitui o backend no template e arranca o Nginx
-CMD ["sh", "-c", "envsubst '${JELLYFIN_SERVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Corrigido para injetar na porta correta e no local permitido
+CMD ["sh", "-c", "envsubst '${JELLYFIN_SERVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && sed -i \"s/listen 80;/listen ${PORT};/\" /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
