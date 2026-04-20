@@ -8,8 +8,6 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # --- CORREÇÃO DE REDE (FORÇAR IPV4) ---
-    # Impede o erro "Network unreachable" ao tentar usar IPv6 do backend
     resolver 8.8.8.8 1.1.1.1 ipv6=off;
 
     # --- OTIMIZAÇÕES DE PERFORMANCE ---
@@ -17,22 +15,25 @@ server {
     tcp_nopush on;
     tcp_nodelay on;
     keepalive_timeout 65;
-    server_tokens off;
+    types_hash_max_size 2048;
+    server_tokens off; # Oculta a versão do Nginx por segurança
 
-    # Buffers robustos para evitar erros 502/404 em respostas grandes
+    # Buffers robustos para evitar erros 502 em respostas grandes da API
     proxy_buffer_size 128k;
     proxy_buffers 4 256k;
     proxy_busy_buffers_size 256k;
 
     # Compressão Gzip avançada
     gzip on;
+    gzip_disable "msie6";
     gzip_vary on;
     gzip_proxied any;
     gzip_comp_level 6;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript font/woff2;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript application/vnd.ms-fontobject application/x-font-ttf font/opentype image/svg+xml image/x-icon;
 
-    # Configurações de SSL Proxy (SNI) - Crucial para backends HTTPS
+    # Configurações de SSL Proxy (SNI)
     proxy_ssl_server_name on;
+    proxy_ssl_name ${JELLYFIN_SERVER};
     proxy_ssl_protocols TLSv1.2 TLSv1.3;
     proxy_ssl_session_reuse on;
 
@@ -40,8 +41,12 @@ server {
     add_header X-Content-Type-Options nosniff;
     add_header X-XSS-Protection "1; mode=block";
     add_header X-Frame-Options "SAMEORIGIN";
+    add_header Referrer-Policy "no-referrer-when-downgrade";
+    # HSTS (Descomentar se usares HTTPS no frontend também)
+    # add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # 1. Redirecionamento de Streaming (Offloading total)
+    # 1. Redirecionamento de Streaming (Offloading total para o Backend)
+    # Evita que o tráfego de vídeo consuma CPU/Banda desta máquina
     location ~* /(Videos|Audio|Items)/(.*)/(Stream|Subtitles|Master.m3u8|Master.m3u|Source) {
         return 302 ${JELLYFIN_SERVER}$request_uri;
     }
@@ -54,47 +59,65 @@ server {
         try_files $uri @backend;
     }
 
-    # 3. Rota de Descoberta e API Crítica (Mapeamento explícito para evitar 404)
-    # Incluímos /socket para garantir que WebSockets passem por aqui
-    location ~* /(System|Users|Sessions|Branding|Localization|DisplayPreferences|socket) {
-        proxy_pass ${JELLYFIN_SERVER};
-        
-        # SNI e Headers de Host
-        proxy_set_header Host jellyfin.bonnybalinese.box.ca;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Suporte a WebSockets
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        add_header Access-Control-Allow-Origin *;
-    }
-
-    # 4. Servir o Frontend (HTML principal)
+    # 3. Servir o Frontend
     location / {
         try_files $uri $uri/ @backend;
     }
 
-    # 5. Fallback Geral
-    location @backend {
+    # 4. Cache de Imagens do Jellyfin (Posters/Backdrops)
+    location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
+        proxy_cache jellyfin_cache;
+        proxy_cache_valid 200 24h;
+        proxy_cache_valid 404 1h;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        proxy_cache_revalidate on;
         
-        proxy_set_header Host jellyfin.bonnybalinese.box.ca;
+        add_header X-Cache-Status $upstream_cache_status;
+
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 5. Rota de Descoberta e API Crítica
+    location ~* /(System|Users|Sessions|Branding|Localization|DisplayPreferences) {
+        proxy_pass ${JELLYFIN_SERVER};
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Garante CORS para Apps
+        add_header Access-Control-Allow-Origin *;
+    }
+
+    # 6. Fallback Geral (API e WebSockets)
+    location @backend {
+        proxy_pass ${JELLYFIN_SERVER};
+        
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Protocol $scheme;
+        proxy_set_header X-Forwarded-Host $http_host;
 
         proxy_redirect default;
         proxy_redirect ${JELLYFIN_SERVER} /;
 
+        # Suporte vital para WebSockets
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
+        # Desativar buffering para API de baixa latência
         proxy_buffering off;
+        proxy_request_buffering off;
+        
         proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
