@@ -19,10 +19,12 @@ FROM nginx:alpine
 RUN apk add --no-cache gettext
 
 ENV JELLYFIN_SERVER=""
-ENV PORT=80
 
+# Copia os ficheiros compilados
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copia o template de configuração do Nginx
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 
-# O script apenas aplica as variáveis de ambiente no template do Nginx
-CMD ["sh", "-c", "envsubst '${JELLYFIN_SERVER} ${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# O script de inicialização agora fixa a porta 80 internamente
+CMD ["sh", "-c", "envsubst '${JELLYFIN_SERVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
