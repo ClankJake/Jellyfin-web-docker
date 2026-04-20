@@ -13,9 +13,15 @@ server {
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
+    # Headers de Segurança e CORS para forçar o reconhecimento "Local"
+    add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Headers *;
+    add_header Access-Control-Allow-Methods *;
+
     # 1. Servir ficheiros estáticos do Frontend (Web Player)
     location / {
-        # Tenta servir o arquivo estático, se não existir (API), manda para o backend
+        # Se for um ficheiro real, serve. Se não, manda para o backend
+        # Importante: O index.html deve ser servido primeiro
         try_files $uri $uri/ @backend;
     }
 
@@ -38,7 +44,7 @@ server {
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers essenciais para Apps (Android, iOS, TV)
+        # Headers essenciais para Apps e para o Web Player se identificar
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -56,9 +62,15 @@ server {
         proxy_request_buffering off;
     }
 
-    # Rota específica para descoberta (ajuda Apps a reconhecerem o servidor)
-    location /System/Info/Public {
+    # Forçar a resposta de rotas que o Web Player usa para detetar o servidor
+    location ~* /(System|Users|Sessions|Branding|Items|Localization|DisplayPreferences|Playlists|LiveTv|Videos|Audio|Images|emby) {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Garante que o CORS passe corretamente nestas rotas
+        add_header Access-Control-Allow-Origin *;
     }
 }
