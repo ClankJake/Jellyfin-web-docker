@@ -1,6 +1,4 @@
-# Configuração da zona de cache (armazenada em /tmp para evitar problemas de permissão)
-# keys_zone=jellyfin_cache:10m (10MB para índices de chaves)
-# max_size=500m (limite máximo de 500MB de ficheiros em cache)
+# Configuração da zona de cache para imagens (limite de 500MB)
 proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=jellyfin_cache:10m max_size=500m inactive=24h use_temp_path=off;
 
 server {
@@ -10,52 +8,46 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Otimizações de Buffer para evitar Erros 502/503 com o Jellyfin
+    # Otimizações de Buffer
     proxy_buffer_size   128k;
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # 1. Servir os ficheiros estáticos do Frontend
+    # 1. Servir arquivos estáticos do Frontend
     location / {
-        # Se o ficheiro não existir (ex: rotas de API /System, /Users), vai para o @backend
         try_files $uri $uri/ @backend;
     }
 
-    # 3. Cache específico para Imagens do Backend
-    # Isto acelera muito o carregamento de capas de filmes e posters
+    # 2. Cache de Imagens (Melhoria de performance)
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
         proxy_cache_valid 200 24h;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
         proxy_cache_lock on;
-        
         add_header X-Cache-Status $upstream_cache_status;
-        
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 2. Proxy para o Backend Real (Geral)
+    # 3. Fallback para o Backend (Proxy Transparente)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers necessários para o Jellyfin reconhecer o cliente
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Protocol $scheme;
-        proxy_set_header X-Forwarded-Host $http_host;
-
-        # Suporte para WebSockets (Essencial para reprodução)
+        
+        # ESSENCIAL: Suporte a WebSockets para evitar quedas na reprodução
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para não consumir RAM no streaming de vídeo
+        # Desativar buffering para streaming de vídeo (não abusar da RAM)
         proxy_buffering off;
     }
 }
