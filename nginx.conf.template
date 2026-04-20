@@ -82,28 +82,22 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 5. Rota de Descoberta, SyncPlay e API Crítica
-    location ~* /(System|Users|Sessions|Branding|Localization|DisplayPreferences|SyncPlay|socket) {
+    # 5. Rota de segurança para chamadas de descoberta de Apps
+    location /System/Info/Public {
         proxy_pass ${JELLYFIN_SERVER};
-        proxy_set_header Host ${JELLYFIN_DOMAIN};
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Suporte para WebSockets
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        
-        # Garante CORS para Apps
         add_header Access-Control-Allow-Origin *;
     }
 
-    # 6. Fallback Geral (API e WebSockets)
+    # 6. Proxy Transparente para o Backend (API e Auth)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        proxy_set_header Host ${JELLYFIN_DOMAIN};
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -113,12 +107,10 @@ server {
         proxy_redirect default;
         proxy_redirect ${JELLYFIN_SERVER} /;
 
-        # Suporte vital para WebSockets
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para API de baixa latência
         proxy_buffering off;
         proxy_request_buffering off;
         
