@@ -1,4 +1,4 @@
-# Configuração da zona de cache para imagens (limite de 500MB)
+# Configuração da zona de cache para posters e imagens (ajuda na fluidez dos apps)
 proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=jellyfin_cache:10m max_size=500m inactive=24h use_temp_path=off;
 
 server {
@@ -8,17 +8,18 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Otimizações de Buffer
+    # Otimizações de Buffer para evitar Erros 502/503 com o Jellyfin
     proxy_buffer_size   128k;
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # 1. Servir arquivos estáticos do Frontend
+    # 1. Servir ficheiros estáticos do Frontend (Web Player)
     location / {
+        # Tenta servir o arquivo estático, se não existir (API), manda para o backend
         try_files $uri $uri/ @backend;
     }
 
-    # 2. Cache de Imagens (Melhoria de performance)
+    # 2. Cache de Imagens para Posters e Backdrops
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
@@ -33,21 +34,31 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 3. Fallback para o Backend (Proxy Transparente)
+    # 3. Proxy Transparente para o Backend (Apps e APIs)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
+        # Headers essenciais para Apps (Android, iOS, TV)
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # ESSENCIAL: Suporte a WebSockets para evitar quedas na reprodução
+        proxy_set_header X-Forwarded-Protocol $scheme;
+        proxy_set_header X-Forwarded-Host $http_host;
+
+        # Suporte vital para WebSockets (Notificações em tempo real e SyncPlay)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para streaming de vídeo (não abusar da RAM)
+        # Desativar buffering para não travar o streaming de vídeo
         proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # Rota específica para descoberta (ajuda Apps a reconhecerem o servidor)
+    location /System/Info/Public {
+        proxy_pass ${JELLYFIN_SERVER};
+        proxy_set_header Host $host;
     }
 }
