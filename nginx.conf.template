@@ -51,20 +51,12 @@ server {
         return 302 ${JELLYFIN_SERVER}$request_uri;
     }
 
-    # 2. Cache Agressivo de Ficheiros Estáticos (Interface)
-    location ~* \.(?:ico|css|js|gif|jpe?g|png|woff2?|eot|otf|ttf|svg|map)$ {
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
-        access_log off;
-        try_files $uri @backend;
-    }
-
-    # 3. Servir o Frontend
+    # 2. Servir o Frontend
     location / {
         try_files $uri $uri/ @backend;
     }
 
-    # 4. Cache de Imagens do Jellyfin (Posters/Backdrops)
+    # 3. Cache de Imagens do Jellyfin (Posters/Backdrops)
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
@@ -82,7 +74,7 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 5. Rota de segurança para chamadas de descoberta de Apps
+    # 4. Rota de segurança para chamadas de descoberta de Apps
     location /System/Info/Public {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_set_header Host $proxy_host;
@@ -93,7 +85,7 @@ server {
         add_header Access-Control-Allow-Origin *;
     }
 
-    # 6. Proxy Transparente para o Backend (API e Auth)
+    # 5. Proxy Transparente para o Backend (API e Auth)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
