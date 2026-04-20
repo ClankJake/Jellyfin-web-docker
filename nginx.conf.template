@@ -13,10 +13,14 @@ server {
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # Headers de Segurança e CORS para forçar o reconhecimento "Local"
-    add_header Access-Control-Allow-Origin *;
-    add_header Access-Control-Allow-Headers *;
-    add_header Access-Control-Allow-Methods *;
+    # NOVIDADE: Injeção Dinâmica do Servidor (Evita pedir o IP no arranque)
+    # O Nginx altera o config.json "em voo" na memória.
+    # Ele pega no seu domínio atual ($scheme://$http_host) e define como servidor padrão.
+    location = /config.json {
+        sub_filter '"servers": []' '"servers": [{"Name": "Jellyfin", "ManualAddress": "$scheme://$http_host", "manualAddressOnly": true}]';
+        sub_filter_types application/json;
+        sub_filter_once on;
+    }
 
     # 1. Servir ficheiros estáticos do Frontend (Web Player)
     location / {
@@ -43,7 +47,7 @@ server {
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers essenciais para que o Web Player se identifique com a "Origem"
+        # Headers essenciais para que o Web Player e os Apps se identifiquem com a "Origem"
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -63,18 +67,5 @@ server {
         # Desativar buffering para não travar o streaming de vídeo
         proxy_buffering off;
         proxy_request_buffering off;
-    }
-
-    # Rotas específicas que o Jellyfin Web consulta para validar o servidor no arranque
-    location ~* /(System|Users|Sessions|Branding|Items|Localization|DisplayPreferences|Playlists|LiveTv|Videos|Audio|Images|emby|web/components|web/assets) {
-        proxy_pass ${JELLYFIN_SERVER};
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Garante que o CORS passe corretamente e o redirecionamento seja transparente
-        proxy_redirect ${JELLYFIN_SERVER} /;
-        add_header Access-Control-Allow-Origin *;
     }
 }
