@@ -1,33 +1,27 @@
-# Configuração da zona de cache para posters e imagens (ajuda na fluidez dos apps)
+# Configuração de cache para imagens
 proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=jellyfin_cache:10m max_size=500m inactive=24h use_temp_path=off;
 
 server {
-    listen ${PORT};
+    listen 80;
     server_name _;
 
     root /usr/share/nginx/html;
     index index.html;
 
-    # Otimizações de Buffer para evitar Erros 502/503 com o Jellyfin
     proxy_buffer_size   128k;
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # NOVIDADE: Resposta JSON Direta
-    # Em vez de tentar alterar o ficheiro, o Nginx responde diretamente com a configuração.
-    # Isto é 100% à prova de falhas de formatação ou espaços.
+    # CONFIGURAÇÃO AUTOMÁTICA DO SERVIDOR
     location = /config.json {
         default_type application/json;
         return 200 '{"localNetworkSubnets":[],"localNetworkAddresses":[],"servers":[{"Name":"Jellyfin","ManualAddress":"$scheme://$http_host","manualAddressOnly":true}],"plugins":[]}';
     }
 
-    # 1. Servir ficheiros estáticos do Frontend (Web Player)
     location / {
-        # Se for um ficheiro real, serve. Se não, manda para o backend
         try_files $uri $uri/ @backend;
     }
 
-    # 2. Cache de Imagens para Posters e Backdrops
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
@@ -42,11 +36,9 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 3. Proxy Transparente para o Backend (Apps e APIs)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers essenciais para que o Web Player e os Apps se identifiquem com a "Origem"
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -54,16 +46,13 @@ server {
         proxy_set_header X-Forwarded-Protocol $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
 
-        # Evita que o backend redirecione para o IP real nas respostas HTTP
         proxy_redirect default;
         proxy_redirect ${JELLYFIN_SERVER} /;
 
-        # Suporte vital para WebSockets
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para não travar o streaming de vídeo
         proxy_buffering off;
         proxy_request_buffering off;
     }
