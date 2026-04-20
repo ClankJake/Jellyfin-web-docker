@@ -13,13 +13,25 @@ server {
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
+    # Compressão Gzip para carregamento mais rápido do frontend
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+    gzip_proxied any;
+    gzip_vary on;
+    gzip_comp_level 6;
+
+    # Configurações globais de SSL para o Proxy (necessário para backends HTTPS)
+    proxy_ssl_server_name on;
+    proxy_ssl_name jellyfin.bonnybalinese.box.ca;
+    proxy_ssl_protocols TLSv1.2 TLSv1.3;
+    proxy_ssl_session_reuse on;
+
     # 1. Servir ficheiros estáticos do Frontend
     location / {
         try_files $uri $uri/ @backend;
     }
 
     # 2. Cache de Imagens (Posters e Capas)
-    # Melhora muito a fluidez ao navegar na biblioteca
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
@@ -27,25 +39,22 @@ server {
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
         proxy_cache_lock on;
         
-        # Header para depuração de cache
         add_header X-Cache-Status $upstream_cache_status;
 
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host; # Importante usar o host do destino em backends SSL
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # 3. Rota de segurança para chamadas de descoberta de Apps
-    # Usamos uma localização exata sem barra final no proxy_pass para evitar o 404
     location /System/Info/Public {
         proxy_pass ${JELLYFIN_SERVER};
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Garante que o CORS não bloqueie a descoberta inicial
         add_header Access-Control-Allow-Origin *;
     }
 
@@ -54,7 +63,7 @@ server {
         proxy_pass ${JELLYFIN_SERVER};
         
         # Headers essenciais para o Jellyfin reconhecer a origem corretamente
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host; # Usar proxy_host garante compatibilidade com SNI (SSL)
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -70,7 +79,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para permitir streaming fluido de vídeo (não consome RAM extra)
+        # Desativar buffering para permitir streaming fluido de vídeo
         proxy_buffering off;
         proxy_request_buffering off;
         
