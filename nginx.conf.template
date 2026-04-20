@@ -36,7 +36,20 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 3. Proxy Transparente para o Backend (API, Auth e Streaming)
+    # 3. Rota de segurança para chamadas de descoberta de Apps
+    # Usamos uma localização exata sem barra final no proxy_pass para evitar o 404
+    location /System/Info/Public {
+        proxy_pass ${JELLYFIN_SERVER};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Garante que o CORS não bloqueie a descoberta inicial
+        add_header Access-Control-Allow-Origin *;
+    }
+
+    # 4. Proxy Transparente para o Backend (API, Auth e Streaming)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
@@ -64,16 +77,5 @@ server {
         # Aumentar timeouts para transcodificações demoradas
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
-    }
-
-    # Rota de segurança para chamadas de descoberta de Apps
-    # Ajustado para evitar 404 garantindo que a URI é passada corretamente
-    location /System/Info/Public {
-        proxy_pass ${JELLYFIN_SERVER}/System/Info/Public;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        add_header Access-Control-Allow-Origin *;
     }
 }
