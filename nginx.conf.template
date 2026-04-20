@@ -21,7 +21,6 @@ server {
     # 1. Servir ficheiros estáticos do Frontend (Web Player)
     location / {
         # Se for um ficheiro real, serve. Se não, manda para o backend
-        # Importante: O index.html deve ser servido primeiro
         try_files $uri $uri/ @backend;
     }
 
@@ -44,7 +43,7 @@ server {
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers essenciais para Apps e para o Web Player se identificar
+        # Headers essenciais para que o Web Player se identifique com a "Origem"
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -52,7 +51,11 @@ server {
         proxy_set_header X-Forwarded-Protocol $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
 
-        # Suporte vital para WebSockets (Notificações em tempo real e SyncPlay)
+        # Evita que o backend redirecione para o IP real nas respostas HTTP
+        proxy_redirect default;
+        proxy_redirect ${JELLYFIN_SERVER} /;
+
+        # Suporte vital para WebSockets
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -62,15 +65,16 @@ server {
         proxy_request_buffering off;
     }
 
-    # Forçar a resposta de rotas que o Web Player usa para detetar o servidor
-    location ~* /(System|Users|Sessions|Branding|Items|Localization|DisplayPreferences|Playlists|LiveTv|Videos|Audio|Images|emby) {
+    # Rotas específicas que o Jellyfin Web consulta para validar o servidor no arranque
+    location ~* /(System|Users|Sessions|Branding|Items|Localization|DisplayPreferences|Playlists|LiveTv|Videos|Audio|Images|emby|web/components|web/assets) {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Garante que o CORS passe corretamente nestas rotas
+        # Garante que o CORS passe corretamente e o redirecionamento seja transparente
+        proxy_redirect ${JELLYFIN_SERVER} /;
         add_header Access-Control-Allow-Origin *;
     }
 }
