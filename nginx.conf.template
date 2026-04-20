@@ -26,12 +26,19 @@ server {
     proxy_ssl_protocols TLSv1.2 TLSv1.3;
     proxy_ssl_session_reuse on;
 
-    # 1. Servir ficheiros estáticos do Frontend
+    # 1. Redirecionamento de Streaming (Offloading)
+    # Estas rotas fazem o tráfego pesado de vídeo ir direto para o backend
+    # sem passar pela rede/processamento desta máquina frontend.
+    location ~* /(Videos|Audio|Items)/(.*)/(Stream|Subtitles|Master.m3u8) {
+        return 302 ${JELLYFIN_SERVER}$request_uri;
+    }
+
+    # 2. Servir ficheiros estáticos do Frontend
     location / {
         try_files $uri $uri/ @backend;
     }
 
-    # 2. Cache de Imagens (Posters e Capas)
+    # 3. Cache de Imagens (Posters e Capas)
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
@@ -41,13 +48,13 @@ server {
         
         add_header X-Cache-Status $upstream_cache_status;
 
-        proxy_set_header Host $proxy_host; # Importante usar o host do destino em backends SSL
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # 3. Rota de segurança para chamadas de descoberta de Apps
+    # 4. Rota de segurança para chamadas de descoberta de Apps
     location /System/Info/Public {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_set_header Host $proxy_host;
@@ -58,32 +65,27 @@ server {
         add_header Access-Control-Allow-Origin *;
     }
 
-    # 4. Proxy Transparente para o Backend (API, Auth e Streaming)
+    # 5. Proxy Transparente para o Backend (API e Auth)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
-        # Headers essenciais para o Jellyfin reconhecer a origem corretamente
-        proxy_set_header Host $proxy_host; # Usar proxy_host garante compatibilidade com SNI (SSL)
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Protocol $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
 
-        # Evita que o backend envie redirecionamentos para o IP interno
         proxy_redirect default;
         proxy_redirect ${JELLYFIN_SERVER} /;
 
-        # Suporte para WebSockets (Crítico para sincronização e player)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # Desativar buffering para permitir streaming fluido de vídeo
         proxy_buffering off;
         proxy_request_buffering off;
         
-        # Aumentar timeouts para transcodificações demoradas
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
     }
