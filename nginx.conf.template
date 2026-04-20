@@ -13,13 +13,12 @@ server {
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # NOVIDADE: Injeção Dinâmica do Servidor (Evita pedir o IP no arranque)
-    # O Nginx altera o config.json "em voo" na memória.
-    # Ele pega no seu domínio atual ($scheme://$http_host) e define como servidor padrão.
+    # NOVIDADE: Resposta JSON Direta
+    # Em vez de tentar alterar o ficheiro, o Nginx responde diretamente com a configuração.
+    # Isto é 100% à prova de falhas de formatação ou espaços.
     location = /config.json {
-        sub_filter '"servers": []' '"servers": [{"Name": "Jellyfin", "ManualAddress": "$scheme://$http_host", "manualAddressOnly": true}]';
-        sub_filter_types application/json;
-        sub_filter_once on;
+        default_type application/json;
+        return 200 '{"localNetworkSubnets":[],"localNetworkAddresses":[],"servers":[{"Name":"Jellyfin","ManualAddress":"$scheme://$http_host","manualAddressOnly":true}],"plugins":[]}';
     }
 
     # 1. Servir ficheiros estáticos do Frontend (Web Player)
