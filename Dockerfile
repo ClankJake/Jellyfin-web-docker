@@ -26,5 +26,5 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copia o template de configuração do Nginx
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 
-# O script de inicialização agora fixa a porta 80 internamente
-CMD ["sh", "-c", "envsubst '${JELLYFIN_SERVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Comando de inicialização com extração automática do domínio
+CMD ["sh", "-c", "export JELLYFIN_DOMAIN=$(echo $JELLYFIN_SERVER | sed -e 's|^[^/]*//||' -e 's|[:/].*||') && envsubst '${JELLYFIN_SERVER} ${JELLYFIN_DOMAIN}' < /etc/nginx/nginx.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
