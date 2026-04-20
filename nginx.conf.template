@@ -1,4 +1,4 @@
-# Configuração de cache para imagens
+# Configuração de cache para imagens (ajuda na performance e poupa processamento do backend)
 proxy_cache_path /tmp/nginx_cache levels=1:2 keys_zone=jellyfin_cache:10m max_size=500m inactive=24h use_temp_path=off;
 
 server {
@@ -8,26 +8,26 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Otimização de buffers para lidar com headers grandes do Jellyfin (evita erro 502)
     proxy_buffer_size   128k;
     proxy_buffers   4 256k;
     proxy_busy_buffers_size   256k;
 
-    # CONFIGURAÇÃO AUTOMÁTICA DO SERVIDOR
-    location = /config.json {
-        default_type application/json;
-        return 200 '{"localNetworkSubnets":[],"localNetworkAddresses":[],"servers":[{"Name":"Jellyfin","ManualAddress":"$scheme://$http_host","manualAddressOnly":true}],"plugins":[]}';
-    }
-
+    # 1. Servir ficheiros estáticos do Frontend
     location / {
         try_files $uri $uri/ @backend;
     }
 
+    # 2. Cache de Imagens (Posters e Capas)
+    # Melhora muito a fluidez ao navegar na biblioteca
     location ~* /Items/(.*)/Images {
         proxy_pass ${JELLYFIN_SERVER};
         proxy_cache jellyfin_cache;
         proxy_cache_valid 200 24h;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
         proxy_cache_lock on;
+        
+        # Header para depuração de cache
         add_header X-Cache-Status $upstream_cache_status;
 
         proxy_set_header Host $host;
@@ -36,9 +36,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 3. Proxy Transparente para o Backend (API, Auth e Streaming)
     location @backend {
         proxy_pass ${JELLYFIN_SERVER};
         
+        # Headers essenciais para o Jellyfin reconhecer a origem corretamente
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -46,14 +48,28 @@ server {
         proxy_set_header X-Forwarded-Protocol $scheme;
         proxy_set_header X-Forwarded-Host $http_host;
 
+        # Evita que o backend envie redirecionamentos para o IP interno
         proxy_redirect default;
         proxy_redirect ${JELLYFIN_SERVER} /;
 
+        # Suporte para WebSockets (Crítico para sincronização e player)
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
+        # Desativar buffering para permitir streaming fluido de vídeo (não consome RAM extra)
         proxy_buffering off;
         proxy_request_buffering off;
+        
+        # Aumentar timeouts para transcodificações demoradas
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Rota de segurança para chamadas de descoberta de Apps
+    location /System/Info/Public {
+        proxy_pass ${JELLYFIN_SERVER};
+        proxy_set_header Host $host;
+        add_header Access-Control-Allow-Origin *;
     }
 }
